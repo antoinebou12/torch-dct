@@ -1,6 +1,6 @@
 # DCT (Discrete Cosine Transform) for **PyTorch**
 
-[![Build Status](https://travis-ci.com/zh217/torch-dct.svg?branch=master)](https://travis-ci.com/zh217/torch-dct)
+[![CI](https://github.com/zh217/torch-dct/actions/workflows/test.yml/badge.svg)](https://github.com/zh217/torch-dct/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/zh217/torch-dct/branch/master/graph/badge.svg)](https://codecov.io/gh/zh217/torch-dct)
 [![PyPI version](https://img.shields.io/pypi/v/torch-dct.svg)](https://pypi.python.org/pypi/torch-dct/)
 [![PyPI versions](https://img.shields.io/pypi/pyversions/torch-dct.svg)](https://pypi.python.org/pypi/torch-dct/)
@@ -16,6 +16,7 @@ For background on the DCT and the algorithms used here, see the relevant article
 * **1-D** DCT-II and its inverse (a scaled DCT-III)  
 * **2-D** DCT-II and its inverse (a scaled DCT-III)  
 * **3-D** DCT-II and its inverse (a scaled DCT-III)
+* All transforms accept a ``dim`` argument to specify the axis
 
 ---
 
@@ -25,14 +26,15 @@ For background on the DCT and the algorithms used here, see the relevant article
 pip install torch-dct
 ````
 
-Requires **PyTorch ≥ 0.4.1** (more recent versions are fully supported; earlier versions may work but are untested).
+Requires **PyTorch ≥ 1.7** and **Python ≥ 3.8**.
 
-To run the test suite you’ll need `pytest` and `scipy`:
+To run the test suite you'll need `pytest` and `scipy`:
 
 ```bash
 git clone https://github.com/zh217/torch-dct.git
 cd torch-dct
-pytest
+pip install -r requirements-test.txt
+pytest -q
 ```
 
 ---
@@ -47,6 +49,8 @@ import torch_dct as dct
 x = torch.randn(200)
 X = dct.dct(x)      # DCT-II along the last dimension
 y = dct.idct(X)     # (scaled) inverse DCT-III
+# specify ``dim`` to transform along other axes
+X_alt = dct.dct(x.unsqueeze(0), dim=0)
 
 # Verify perfect reconstruction within numerical tolerance
 assert torch.allclose(x, y, atol=1e-10)
