@@ -1,60 +1,49 @@
+"""Discrete Cosine Transform utilities built on top of :mod:`torch.fft`."""
+
+from __future__ import annotations
+
 import numpy as np
 import torch
-import torch.nn as nn
+from torch import Tensor
+from torch import nn
 
-try:
-    # PyTorch 1.7.0 and newer versions
-    import torch.fft
 
-    def dct1_rfft_impl(x):
-        return torch.view_as_real(torch.fft.rfft(x, dim=1))
-    
-    def dct_fft_impl(v):
-        return torch.view_as_real(torch.fft.fft(v, dim=1))
+def dct1_rfft_impl(x: Tensor) -> Tensor:
+    """Helper returning the real part of ``rfft`` for DCT-I."""
+    return torch.fft.rfft(x, dim=1).real
 
-    def idct_irfft_impl(V):
-        return torch.fft.irfft(torch.view_as_complex(V), n=V.shape[1], dim=1)
-except ImportError:
-    # PyTorch 1.6.0 and older versions
-    def dct1_rfft_impl(x):
-        return torch.rfft(x, 1)
-    
-    def dct_fft_impl(v):
-        return torch.rfft(v, 1, onesided=False)
 
-    def idct_irfft_impl(V):
-        return torch.irfft(V, 1, onesided=False)
+def dct_fft_impl(v: Tensor) -> Tensor:
+    """Helper returning real and imaginary parts of ``fft`` result."""
+    return torch.view_as_real(torch.fft.fft(v, dim=1))
+
+
+def idct_irfft_impl(V: Tensor) -> Tensor:
+    """Helper performing the inverse ``irfft`` for DCT calculations."""
+    return torch.fft.irfft(torch.view_as_complex(V), n=V.shape[1], dim=1)
 
 
 
-def dct1(x):
-    """
-    Discrete Cosine Transform, Type I
-
-    :param x: the input signal
-    :return: the DCT-I of the signal over the last dimension
-    """
-    x_shape = x.shape
-    x = x.view(-1, x_shape[-1])
+def dct1(x: Tensor, dim: int = -1) -> Tensor:
+    """Compute the Type-I DCT along ``dim``."""
+    x = torch.movedim(x, dim, -1)
+    orig_shape = x.shape
+    x = x.reshape(-1, orig_shape[-1])
     x = torch.cat([x, x.flip([1])[:, 1:-1]], dim=1)
 
-    return dct1_rfft_impl(x)[:, :, 0].view(*x_shape)
+    out = dct1_rfft_impl(x)
+    out = out[..., : orig_shape[-1]]
+    out = out.view(*orig_shape)
+    return torch.movedim(out, -1, dim)
 
 
-def idct1(X):
-    """
-    The inverse of DCT-I, which is just a scaled DCT-I
-
-    Our definition if idct1 is such that idct1(dct1(x)) == x
-
-    :param X: the input signal
-    :return: the inverse DCT-I of the signal over the last dimension
-    """
-    n = X.shape[-1]
-    return dct1(X) / (2 * (n - 1))
+def idct1(X: Tensor, dim: int = -1) -> Tensor:
+    """Inverse of :func:`dct1` along ``dim``."""
+    n = X.shape[dim]
+    return dct1(X, dim=dim) / (2 * (n - 1))
 
 
-def dct(x, norm=None):
+def dct(x: Tensor, norm: str | None = None, dim: int = -1) -> Tensor:
     """
     Discrete Cosine Transform, Type II (a.k.a. the DCT)
 
@@ -65,6 +54,7 @@ def dct(x, norm=None):
     :param norm: the normalization, None or 'ortho'
     :return: the DCT-II of the signal over the last dimension
     """
+    x = torch.movedim(x, dim, -1)
     x_shape = x.shape
     N = x_shape[-1]
     x = x.contiguous().view(-1, N)
@@ -84,11 +74,11 @@ def dct(x, norm=None):
         V[:, 1:] /= np.sqrt(N / 2) * 2
 
     V = 2 * V.view(*x_shape)
-
+    V = torch.movedim(V, -1, dim)
     return V
 
 
-def idct(X, norm=None):
+def idct(X: Tensor, norm: str | None = None, dim: int = -1) -> Tensor:
     """
     The inverse to DCT-II, which is a scaled Discrete Cosine Transform, Type III
 
@@ -102,6 +92,7 @@ def idct(X, norm=None):
     :return: the inverse DCT-II of the signal over the last dimension
     """
 
+    X = torch.movedim(X, dim, -1)
     x_shape = X.shape
     N = x_shape[-1]
 
@@ -128,10 +119,11 @@ def idct(X, norm=None):
     x[:, ::2] += v[:, :N - (N // 2)]
     x[:, 1::2] += v.flip([1])[:, :N // 2]
 
-    return x.view(*x_shape)
+    x = x.view(*x_shape)
+    return torch.movedim(x, -1, dim)
 
 
-def dct_2d(x, norm=None):
+def dct_2d(x: Tensor, norm: str | None = None) -> Tensor:
     """
     2-dimentional Discrete Cosine Transform, Type II (a.k.a. the DCT)
 
@@ -142,12 +134,12 @@ def dct_2d(x, norm=None):
     :param norm: the normalization, None or 'ortho'
     :return: the DCT-II of the signal over the last 2 dimensions
     """
-    X1 = dct(x, norm=norm)
-    X2 = dct(X1.transpose(-1, -2), norm=norm)
-    return X2.transpose(-1, -2)
+    X1 = dct(x, norm=norm, dim=-1)
+    X2 = dct(X1, norm=norm, dim=-2)
+    return X2
 
 
-def idct_2d(X, norm=None):
+def idct_2d(X: Tensor, norm: str | None = None) -> Tensor:
     """
     The inverse to 2D DCT-II, which is a scaled Discrete Cosine Transform, Type III
 
@@ -160,12 +152,12 @@ def idct_2d(X, norm=None):
     :param norm: the normalization, None or 'ortho'
     :return: the DCT-II of the signal over the last 2 dimensions
     """
-    x1 = idct(X, norm=norm)
-    x2 = idct(x1.transpose(-1, -2), norm=norm)
-    return x2.transpose(-1, -2)
+    x1 = idct(X, norm=norm, dim=-1)
+    x2 = idct(x1, norm=norm, dim=-2)
+    return x2
 
 
-def dct_3d(x, norm=None):
+def dct_3d(x: Tensor, norm: str | None = None) -> Tensor:
     """
     3-dimentional Discrete Cosine Transform, Type II (a.k.a. the DCT)
 
@@ -176,13 +168,13 @@ def dct_3d(x, norm=None):
     :param norm: the normalization, None or 'ortho'
     :return: the DCT-II of the signal over the last 3 dimensions
     """
-    X1 = dct(x, norm=norm)
-    X2 = dct(X1.transpose(-1, -2), norm=norm)
-    X3 = dct(X2.transpose(-1, -3), norm=norm)
-    return X3.transpose(-1, -3).transpose(-1, -2)
+    X1 = dct(x, norm=norm, dim=-1)
+    X2 = dct(X1, norm=norm, dim=-2)
+    X3 = dct(X2, norm=norm, dim=-3)
+    return X3
 
 
-def idct_3d(X, norm=None):
+def idct_3d(X: Tensor, norm: str | None = None) -> Tensor:
     """
     The inverse to 3D DCT-II, which is a scaled Discrete Cosine Transform, Type III
 
@@ -195,10 +187,10 @@ def idct_3d(X, norm=None):
     :param norm: the normalization, None or 'ortho'
     :return: the DCT-II of the signal over the last 3 dimensions
     """
-    x1 = idct(X, norm=norm)
-    x2 = idct(x1.transpose(-1, -2), norm=norm)
-    x3 = idct(x2.transpose(-1, -3), norm=norm)
-    return x3.transpose(-1, -3).transpose(-1, -2)
+    x1 = idct(X, norm=norm, dim=-1)
+    x2 = idct(x1, norm=norm, dim=-2)
+    x3 = idct(x2, norm=norm, dim=-3)
+    return x3
 
 
 class LinearDCT(nn.Linear):
